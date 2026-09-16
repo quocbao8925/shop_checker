@@ -2,7 +2,9 @@
 
 Native Kotlin UI with Chaquopy 17 / Python 3.10. Android 7+ (API 24),
 arm64 phones and x86_64 emulators. The first version displays shop text,
-wallet and bundles. Images and a continuously ticking countdown are not yet implemented.
+wallet and bundles. Version 0.2 adds English UI, a red/black theme, weapon images
+and centered short screens. Screenshots are enabled outside the Riot login page.
+The reset time is updated when refreshing; a continuously ticking countdown is not yet implemented.
 
 ## Build locally
 

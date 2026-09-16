@@ -2,6 +2,10 @@ package vn.shopchecker
 
 import android.app.Activity
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.content.res.ColorStateList
+import android.view.Gravity
 import android.net.Uri
 import android.os.Bundle
 import android.view.WindowManager
@@ -15,6 +19,12 @@ import java.util.Date
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
+    private val images = SkinImages()
+    private val canvasColor = Color.rgb(12, 14, 18)
+    private val panel = Color.rgb(30, 33, 39)
+    private val accent = Color.rgb(255, 70, 85)
+    private val muted = Color.rgb(170, 174, 183)
+    private var centered = true
     private val worker = Executors.newSingleThreadExecutor()
     private lateinit var vault: SessionVault
     private lateinit var body: LinearLayout
@@ -24,26 +34,83 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        window.statusBarColor = canvasColor
+        window.navigationBarColor = canvasColor
         vault = SessionVault(this)
         refresh()
     }
-    private fun page(title: String) {
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+    private fun shape(color: Int, stroke: Int = color) = GradientDrawable().apply {
+        setColor(color); cornerRadius = dp(12).toFloat(); setStroke(dp(1), stroke)
+    }
+    private fun page(title: String, center: Boolean = true) {
+        centered = center
         body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(32, 40, 32, 32)
-            setBackgroundColor(Color.rgb(15, 25, 35))
+            gravity = if (center) Gravity.CENTER_VERTICAL else Gravity.TOP
+            setPadding(dp(20), dp(24), dp(20), dp(24))
         }
-        setContentView(ScrollView(this).apply { addView(body) })
-        label(title, 26f)
+        setContentView(ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(canvasColor)
+            clipToPadding = false
+            addView(body, android.view.ViewGroup.LayoutParams(-1, -2))
+        })
+        label("SHOP CHECKER", 12f, accent)
+        label(title, 28f)
     }
-    private fun label(value: String, size: Float = 17f) {
-        body.addView(TextView(this).apply {
-            text = value; textSize = size; setTextColor(Color.WHITE); setPadding(0, 16, 0, 16)
+    private fun text(value: String, size: Float, color: Int = Color.WHITE) =
+        TextView(this).apply {
+            text = value; textSize = size; setTextColor(color)
+            setPadding(0, dp(6), 0, dp(6))
+            if (size >= 22f) typeface = Typeface.DEFAULT_BOLD
+        }
+    private fun label(value: String, size: Float = 16f, color: Int = Color.WHITE) {
+        body.addView(text(value, size, color).apply {
+            gravity = if (centered) Gravity.CENTER else Gravity.START
         })
     }
-    private fun button(title: String, action: () -> Unit) {
-        body.addView(Button(this).apply { text = title; setOnClickListener { action() } })
+    private fun button(title: String, primary: Boolean = false, action: () -> Unit) {
+        body.addView(Button(this).apply {
+            text = title; isAllCaps = true; setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            background = shape(if (primary) accent else panel)
+            layoutParams = LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(12) }
+            setOnClickListener { action() }
+        })
+    }
+    private fun offerCard(offer: JSONObject): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(77, 26, 37), panel, Color.rgb(19, 21, 26))
+            ).apply { cornerRadius = dp(12).toFloat(); setStroke(dp(1), Color.rgb(90, 43, 51)) }
+            val frame = FrameLayout(this@MainActivity)
+            val placeholder = text("Loading image...", 12f, muted).apply { gravity = Gravity.CENTER }
+            val image = ImageView(this@MainActivity).apply {
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                contentDescription = offer.optString("name", "Weapon skin")
+                setPadding(dp(4), dp(8), dp(4), dp(8))
+            }
+            frame.addView(placeholder, FrameLayout.LayoutParams(-1, -1))
+            frame.addView(image, FrameLayout.LayoutParams(-1, -1))
+            addView(frame, LinearLayout.LayoutParams(-1, dp(110)))
+            images.load(offer.optString("display_icon")) { bitmap ->
+                if (!isDestroyed) {
+                    if (bitmap != null) { image.setImageBitmap(bitmap); placeholder.visibility = android.view.View.GONE }
+                    else placeholder.text = "Image unavailable"
+                }
+            }
+            addView(text(offer.optString("name", "Unknown skin"), 17f).apply {
+                typeface = Typeface.DEFAULT_BOLD
+                minLines = 2
+            })
+            addView(text(offer.optString("content_tier_name", "Unknown"), 12f, muted))
+            val cost = offer.optInt("cost")
+            addView(text(if (cost > 0) "$cost VP" else "Price unavailable", 18f, accent))
+        }
     }
     private fun call(name: String, vararg args: Any): String {
         if (!Python.isStarted()) Python.start(AndroidPlatform(applicationContext))
@@ -53,7 +120,10 @@ class MainActivity : Activity() {
         if (busy) return
         busy = true
         page(message)
-        body.addView(ProgressBar(this))
+        body.addView(ProgressBar(this).apply {
+            indeterminateTintList = ColorStateList.valueOf(accent)
+            layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply { gravity = Gravity.CENTER; topMargin = dp(20) }
+        })
         worker.execute {
             try {
                 val result = work()
@@ -62,21 +132,21 @@ class MainActivity : Activity() {
                 // Never expose a Python exception: it can contain account data or tokens.
                 runOnUiThread {
                     busy = false
-                    if (!isDestroyed) welcome("Khong ket noi duoc. Kiem tra mang va thu dang nhap lai.")
+                    if (!isDestroyed) welcome("Unable to connect. Check your connection and try signing in again.")
                 }
             }
         }
     }
-    private fun welcome(message: String = "Xem Daily Shop tren dien thoai") {
-        page("Shop Checker")
+    private fun welcome(message: String = "Your daily rotation, wherever you are.") {
+        page("YOUR NEXT SKIN AWAITS")
         label(message)
-        button("Dang nhap Riot") { beginLogin() }
-        button("Thu tai shop") { refresh() }
-        button("Dang xuat") { logout() }
-        label("Ung dung ca nhan, khong duoc Riot bao chung.", 12f)
+        button("Sign in with Riot", primary = true) { beginLogin() }
+        button("Try loading shop") { refresh() }
+        button("Sign out") { logout() }
+        label("Unofficial companion. Not endorsed by Riot Games.", 12f)
     }
     private fun refresh() {
-        task("Dang tai shop...", {
+        task("LOADING YOUR SHOP", {
             val session = vault.load()
             if (session == null) "{\"status\":\"login_required\"}"
             else call("shop", filesDir.absolutePath, session)
@@ -84,39 +154,45 @@ class MainActivity : Activity() {
     }
     private fun renderShop(result: JSONObject) {
         val status = result.getString("status")
-        if (status == "login_required") { welcome("Dang nhap de xem shop cua ban."); return }
-        if (status == "unavailable") { welcome("Chua tai duoc shop. Hay thu lai sau."); return }
+        if (status == "login_required") { welcome("Sign in to see your personal daily shop."); return }
+        if (status == "unavailable") { welcome("Your shop is unavailable. Please try again later."); return }
         val snapshot = result.getJSONObject("snapshot")
-        page("Daily Shop")
+        page("DAILY SHOP")
         val fetched = snapshot.getDouble("fetched_at")
-        label(if (status == "cached") "DU LIEU DA LUU ? ${Date((fetched * 1000).toLong())}" else "Vua cap nhat")
+        label(if (status == "cached") "CACHED STORE | ${Date((fetched * 1000).toLong())}" else "LIVE STORE")
         val wallet = snapshot.getJSONObject("wallet")
         label("${wallet.getInt("valorant_points")} VP   |   ${wallet.getInt("radianite_points")} Radianite")
         val daily = snapshot.getJSONObject("daily_store")
         val remaining = (fetched + daily.getInt("seconds_remaining") - System.currentTimeMillis() / 1000).toLong().coerceAtLeast(0)
-        label("Doi shop sau: ${remaining / 3600} gio ${(remaining % 3600) / 60} phut")
+        label("Resets in ${remaining / 3600}h ${(remaining % 3600) / 60}m")
         val offers = daily.getJSONArray("offers")
-        if (offers.length() == 0) label("Chua co danh sach vat pham.")
-        for (i in 0 until offers.length()) {
-            val offer = offers.getJSONObject(i)
-            val cost = offer.getInt("cost")
-            label(offer.getString("name"), 22f)
-            label("${offer.getString("content_tier_name")} | ${if (cost > 0) "$cost VP" else "Chua ro gia"}")
+        if (offers.length() == 0) label("No offers available.")
+        for (i in 0 until offers.length() step 2) {
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            for (j in i..i + 1) {
+                val card = if (j < offers.length()) offerCard(offers.getJSONObject(j)) else LinearLayout(this)
+                row.addView(card, LinearLayout.LayoutParams(0, -1, 1f).apply {
+                    if (j > i) leftMargin = dp(12)
+                })
+            }
+            body.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
         }
         val bundles = snapshot.getJSONArray("bundles")
+        if (bundles.length() > 0) label("FEATURED BUNDLES", 22f)
         for (i in 0 until bundles.length()) {
             val bundle = bundles.getJSONObject(i)
-            label("${bundle.getString("name")} ? ${bundle.getInt("total_discounted_price")} VP")
+            label("${bundle.getString("name")} | ${bundle.getInt("total_discounted_price")} VP")
         }
-        button("Lam moi") { refresh() }
-        button("Dang xuat") { logout() }
+        button("Refresh shop", primary = true) { refresh() }
+        button("Sign out") { logout() }
     }
     private fun beginLogin() {
         val state = UUID.randomUUID().toString()
         loginState = state
-        task("Dang mo Riot...", { call("login_url", state) }) { url ->
-            page("Dang nhap Riot")
-            button("Huy dang nhap") { closeBrowser(); welcome() }
+        task("OPENING RIOT", { call("login_url", state) }) { url ->
+            page("RIOT SIGN IN", center = false)
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            button("Cancel sign-in") { closeBrowser(); welcome() }
             val web = WebView(this)
             browser = web
             web.settings.javaScriptEnabled = true
@@ -135,7 +211,7 @@ class MainActivity : Activity() {
                 override fun onPageFinished(view: WebView, url: String) { capture(url) }
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                     if (request.isForMainFrame && !capture(request.url.toString()) && browser != null) {
-                        closeBrowser(); welcome("Khong mo duoc Riot. Kiem tra mang hoac thu lai.")
+                        closeBrowser(); welcome("Unable to open Riot. Check your connection and try again.")
                     }
                 }
             }
@@ -149,7 +225,7 @@ class MainActivity : Activity() {
         val state = loginState ?: return true
         loginState = null
         closeBrowser()
-        task("Dang ket noi tai khoan...", {
+        task("CONNECTING YOUR ACCOUNT", {
             val session = call("authenticate", url, state)
             vault.save(session)
             call("shop", filesDir.absolutePath, session)
@@ -164,6 +240,7 @@ class MainActivity : Activity() {
             web.destroy()
         }
         browser = null
+        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
     private fun logout() {
         if (busy) return
@@ -171,7 +248,7 @@ class MainActivity : Activity() {
         vault.clear()
         CookieManager.getInstance().removeAllCookies { CookieManager.getInstance().flush() }
         WebStorage.getInstance().deleteAllData()
-        welcome("Da dang xuat.")
+        welcome("You have signed out.")
     }
     @Deprecated("Legacy Activity navigation")
     override fun onBackPressed() {
@@ -180,6 +257,7 @@ class MainActivity : Activity() {
     }
     override fun onDestroy() {
         closeBrowser()
+        images.close()
         worker.shutdown()
         super.onDestroy()
     }
