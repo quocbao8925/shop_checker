@@ -153,6 +153,7 @@ class Bundle:
 class Wallet:
     valorant_points: int
     radianite_points: int
+    kingdom_credits: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -162,6 +163,7 @@ class Wallet:
         return cls(
             valorant_points=data.get("valorant_points", 0),
             radianite_points=data.get("radianite_points", 0),
+            kingdom_credits=data.get("kingdom_credits", 0),
         )
 
 
@@ -191,6 +193,7 @@ class StoreSnapshot:
     bundles: list[Bundle]
     wallet: Wallet
     fetched_at: float = field(default_factory=time.time)
+    sections: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -198,6 +201,7 @@ class StoreSnapshot:
             "bundles": [bundle.to_dict() for bundle in self.bundles],
             "wallet": self.wallet.to_dict(),
             "fetched_at": self.fetched_at,
+            "sections": self.sections,
         }
 
     @classmethod
@@ -207,4 +211,5 @@ class StoreSnapshot:
             bundles=[Bundle.from_dict(b) for b in data.get("bundles", [])],
             wallet=Wallet.from_dict(data["wallet"]),
             fetched_at=data.get("fetched_at", time.time()),
+            sections=data.get("sections", []),
         )

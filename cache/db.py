@@ -49,6 +49,13 @@ class DatabaseCache:
                 )
             """)
 
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS catalog_items (
+                    uuid TEXT PRIMARY KEY,
+                    data_json TEXT NOT NULL
+                )
+            """)
+
             # Skins master table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS skins (
@@ -292,3 +299,28 @@ class DatabaseCache:
                 except (json.JSONDecodeError, KeyError) as exc:
                     logger.warning("Could not parse store snapshot: %s", exc)
             return None
+
+
+    def get_metadata(self, key: str, default: str = "") -> str:
+        row = self._conn.execute("SELECT value FROM metadata WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else default
+
+    def set_metadata(self, key: str, value: str) -> None:
+        with self._conn:
+            self._conn.execute("INSERT OR REPLACE INTO metadata VALUES (?, ?)", (key, value))
+
+    def save_catalog_items(self, rows: list[dict[str, Any]]) -> None:
+        with self._conn:
+            self._conn.executemany(
+                "INSERT OR REPLACE INTO catalog_items VALUES (?, ?)",
+                [(row["uuid"].lower(), json.dumps(row)) for row in rows],
+            )
+
+    def get_item(self, uuid: str) -> dict[str, Any] | None:
+        skin = self.get_skin(uuid)
+        if skin:
+            return {**skin, "kind": "Weapon skin"}
+        row = self._conn.execute(
+            "SELECT data_json FROM catalog_items WHERE uuid = ?", (uuid.lower(),)
+        ).fetchone()
+        return json.loads(row["data_json"]) if row else None

@@ -6,6 +6,18 @@ wallet and bundles. Version 0.2 adds English UI, a red/black theme, weapon image
 and centered short screens. Screenshots are enabled outside the Riot login page.
 The reset time is updated when refreshing; a continuously ticking countdown is not yet implemented.
 
+Version 0.3 makes SHOP CHECKER the login headline and keeps only Sign in when
+signed out. The footer shows the installed version and a clickable GitHub link.
+Featured bundles now show their banner and individual items. Accessories include
+buddy, spray, card and title metadata with Kingdom Credit prices. Night Market
+and Radianite offers appear when returned by the storefront. Missing artwork is
+left out without an error placeholder. Catalog metadata refreshes daily and old
+snapshots remain readable; use Refresh shop once after upgrading for new sections.
+
+Validation for 0.3: 25 offline Python tests cover metadata aliases, bundle formats,
+discount prices, KC prices, cached snapshots and existing authentication behavior.
+Live accessory/bundle content still needs confirmation against the game on-device.
+
 ## Build locally
 
 Install Android Studio (including SDK platform 35) and JDK 17, Python 3.10,

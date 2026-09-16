@@ -25,6 +25,7 @@ from models import (
 logger = logging.getLogger(__name__)
 
 VP_CURRENCY_ID = "85ad13f7-3d1b-5128-9eb2-7cd8ee0b5741"
+KINGDOM_CURRENCY_ID = "85ca954a-41f2-ce94-9b45-8ca3dd39a00d"
 RADIANITE_CURRENCY_ID = "e59aa87c-4cbf-517a-5983-6e81511be9b7"
 
 CLIENT_PLATFORM = (
@@ -89,16 +90,21 @@ class StoreClient:
         return Wallet(
             valorant_points=balances.get(VP_CURRENCY_ID, 0),
             radianite_points=balances.get(RADIANITE_CURRENCY_ID, 0),
+            kingdom_credits=balances.get(KINGDOM_CURRENCY_ID, 0),
         )
 
     def parse_daily_store(self, raw_storefront: dict[str, Any]) -> DailyStore:
         """Parse and resolve daily weapon offers against the local asset cache."""
         panel = raw_storefront.get("SkinsPanelLayout", {})
-        raw_offers = panel.get("SingleItemStoreOffers", [])
+        raw_offers = panel.get("SingleItemStoreOffers") or panel.get("SingleItemOffers", [])
         seconds_remaining = panel.get("SingleItemOffersRemainingDurationInSeconds", 0)
 
         offers: list[SkinOffer] = []
         for raw_offer in raw_offers:
+            if isinstance(raw_offer, str):
+                raw_offer = {"OfferID": raw_offer}
+            if not isinstance(raw_offer, dict):
+                continue
             offer_id = raw_offer.get("OfferID", "")
             cost = raw_offer.get("Cost", {}).get(VP_CURRENCY_ID, 0)
 
@@ -143,7 +149,7 @@ class StoreClient:
     def parse_bundles(self, raw_storefront: dict[str, Any]) -> list[Bundle]:
         """Parse and resolve featured bundles against the local asset cache."""
         featured = raw_storefront.get("FeaturedBundle", {})
-        raw_bundles = featured.get("Bundles", [])
+        raw_bundles = featured.get("Bundles") or ([featured["Bundle"]] if featured.get("Bundle") else [])
 
         bundles: list[Bundle] = []
         for raw_bundle in raw_bundles:
@@ -157,14 +163,25 @@ class StoreClient:
             total_base = 0
             total_discounted = 0
 
-            for raw_item in raw_bundle.get("Items", []):
+            raw_items = raw_bundle.get("Items") or []
+            if not raw_items:
+                for item_offer in raw_bundle.get("ItemOffers") or []:
+                    offer = item_offer.get("Offer") or {}
+                    for reward in offer.get("Rewards") or []:
+                        raw_items.append({
+                            "Item": reward,
+                            "BasePrice": (offer.get("Cost") or {}).get(VP_CURRENCY_ID, 0),
+                            "DiscountedPrice": (item_offer.get("DiscountedCost") or offer.get("Cost") or {}).get(VP_CURRENCY_ID, 0),
+                            "DiscountPercent": item_offer.get("DiscountPercent", 0),
+                        })
+            for raw_item in raw_items:
                 item_uuid = raw_item.get("Item", {}).get("ItemID", "")
                 base_price = raw_item.get("BasePrice", 0)
                 discounted_price = raw_item.get("DiscountedPrice", base_price)
                 discount_pct = raw_item.get("DiscountPercent", 0.0)
 
-                skin = self.cache.get_skin(item_uuid)
-                item_name = skin.get("display_name", "Unknown Item") if skin else "Unknown Item"
+                skin = self.cache.get_item(item_uuid)
+                item_name = (skin.get("display_name") if skin else None) or raw_item.get("DisplayName") or f"Item {item_uuid[:8]}"
                 item_icon = skin.get("display_icon", "") if skin else ""
 
                 items.append(
@@ -180,6 +197,8 @@ class StoreClient:
                 total_base += base_price
                 total_discounted += discounted_price
 
+            total_base = (raw_bundle.get("TotalBaseCost") or {}).get(VP_CURRENCY_ID, total_base)
+            total_discounted = (raw_bundle.get("TotalDiscountedCost") or {}).get(VP_CURRENCY_ID, total_discounted)
             bundles.append(
                 Bundle(
                     uuid=bundle_uuid,
@@ -207,6 +226,66 @@ class StoreClient:
             daily_store=daily_store,
             bundles=bundles,
             wallet=wallet,
+            sections=self.parse_sections(raw_storefront),
         )
         self.cache.save_store_snapshot(snapshot)
         return snapshot
+
+
+    def _price_label(self, costs: dict) -> str:
+        labels = {VP_CURRENCY_ID: "VP", KINGDOM_CURRENCY_ID: "KC", RADIANITE_CURRENCY_ID: "RP"}
+        parts = []
+        for currency, amount in costs.items():
+            metadata = self.cache.get_item(currency) or {}
+            unit = labels.get(currency, metadata.get("display_name", "currency"))
+            parts.append(f"{amount:,} {unit}")
+        return " + ".join(parts) if parts else ""
+
+    def parse_sections(self, raw: dict[str, Any]) -> list[dict[str, Any]]:
+        """Include optional storefront sections, never inventing absent offers."""
+        definitions = (
+            ("AccessoryStore", "ACCESSORIES", "AccessoryStoreOffers", "AccessoryStoreRemainingDurationInSeconds"),
+            ("BonusStore", "NIGHT MARKET", "BonusStoreOffers", "BonusStoreRemainingDurationInSeconds"),
+            ("UpgradeCurrencyStore", "RADIANITE POINTS", "UpgradeCurrencyOffers", None),
+        )
+        sections = []
+        for key, title, offers_key, timer_key in definitions:
+            if key not in raw or not isinstance(raw[key], dict):
+                continue
+            panel = raw[key]
+            items = []
+            for wrapper in panel.get(offers_key) or []:
+                offer = wrapper.get("Offer") or wrapper
+                costs = wrapper.get("DiscountCosts")
+                if costs is None:
+                    costs = wrapper.get("DiscountedCost")
+                if costs is None:
+                    costs = offer.get("Cost") or {}
+                rewards = offer.get("Rewards") or []
+                # A price belongs to an offer, not to each reward separately.
+                resolved = []
+                for reward in rewards:
+                    uuid = reward.get("ItemID", "")
+                    metadata = self.cache.get_item(uuid) or {}
+                    resolved.append({
+                        "name": metadata.get("display_name") or reward.get("DisplayName") or f"Item {uuid[:8]}",
+                        "display_icon": metadata.get("display_icon") or "",
+                        "kind": metadata.get("kind", ""),
+                        "quantity": reward.get("Quantity", 1),
+                    })
+                if not resolved:
+                    continue
+                item = resolved[0]
+                if len(resolved) > 1:
+                    item = {**item, "name": " + ".join(r["name"] for r in resolved)}
+                elif item["quantity"] > 1:
+                    item = {**item, "name": f'{item["quantity"]} x {item["name"]}'}
+                items.append({
+                    **item, "price_label": self._price_label(costs),
+                    "discount_percent": wrapper.get("DiscountPercent", 0),
+                })
+            sections.append({
+                "name": title, "items": items,
+                "seconds_remaining": panel.get(timer_key) if timer_key else None,
+            })
+        return sections

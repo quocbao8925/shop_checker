@@ -31,6 +31,7 @@ def shop(storage_dir, session_json):
     assets = ValorantApiClient()
     try:
         version = assets.sync_assets(cache)
+        assets.sync_accessories(cache)
         if cache.has_assets():
             try:
                 version = assets.fetch_version() or version

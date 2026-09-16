@@ -7,6 +7,7 @@ to resolve opaque UUIDs into rich UI assets.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 import requests
@@ -82,7 +83,8 @@ class ValorantApiClient:
         Returns the dynamic client version string.
         Falls back to local cache or bundled seed assets if network fails.
         """
-        if not force and cache.has_assets():
+        fresh = time.time() - float(cache.get_metadata("last_synced", "0")) < 86400
+        if not force and fresh and cache.has_assets():
             cached_version = cache.get_client_version()
             if cached_version:
                 logger.info("Using cached assets and client version: %s", cached_version)
@@ -112,3 +114,36 @@ class ValorantApiClient:
             logger.info("Falling back to bundled seed assets...")
             return self.load_seed_assets(cache)
 
+
+
+    def sync_accessories(self, cache: DatabaseCache) -> None:
+        """Refresh independent catalogs daily, retaining cached data on failure."""
+        for endpoint, kind in (
+            ("buddies", "Gun buddy"), ("sprays", "Spray"),
+            ("playercards", "Player card"), ("playertitles", "Player title"),
+            ("currencies", "Currency"),
+        ):
+            stamp = "catalog_synced_" + endpoint
+            if time.time() - float(cache.get_metadata(stamp, "0")) < 86400:
+                continue
+            try:
+                response = self.session.get(
+                    f"{self.base_url}/{endpoint}", params={"language": "en-US"},
+                    timeout=min(self.timeout, 8),
+                )
+                response.raise_for_status()
+                rows = []
+                for item in response.json().get("data", []):
+                    name = item.get("displayName") or item.get("titleText") or kind
+                    icon = (item.get("largeArt") or item.get("fullTransparentIcon")
+                            or item.get("displayIcon") or "")
+                    entry = dict(uuid=item["uuid"], display_name=name,
+                                 display_icon=icon, kind=kind)
+                    rows.append(entry)
+                    for level in item.get("levels", []) or []:
+                        rows.append({**entry, "uuid": level["uuid"]})
+                cache.save_catalog_items(rows)
+                cache.set_metadata(stamp, str(time.time()))
+            except Exception:
+                # Optional metadata must never prevent viewing the store.
+                logger.warning("Could not refresh %s catalog; keeping cached metadata.", endpoint)

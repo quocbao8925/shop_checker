@@ -45,6 +45,7 @@ class AndroidBridgeTests(unittest.TestCase):
             return snapshot
         with tempfile.TemporaryDirectory() as directory, \
                 patch.object(bridge.ValorantApiClient, "sync_assets", return_value="version"), \
+                patch.object(bridge.ValorantApiClient, "sync_accessories"), \
                 patch.object(bridge.StoreClient, "fetch_full_snapshot", autospec=True, side_effect=save_snapshot):
             session = json.dumps(self.tokens().to_dict())
             self.assertEqual(json.loads(bridge.shop(directory, session))["status"], "live")
