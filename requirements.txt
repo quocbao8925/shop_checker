@@ -1,0 +1,7 @@
+# Core dependencies for Valorant Shop Android Tool
+requests>=2.31.0
+urllib3>=2.0.0
+
+# Optional UI dependencies (for Android/Desktop packaging):
+# kivy>=2.3.0
+# kivymd>=1.2.0

@@ -1,0 +1,114 @@
+"""Client for public valorant-api.com endpoints.
+
+Fetches weapon skins, content tiers, bundles, and Riot client version
+to resolve opaque UUIDs into rich UI assets.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import requests
+
+from cache.db import DatabaseCache
+
+logger = logging.getLogger(__name__)
+
+BASE_URL = "https://valorant-api.com/v1"
+
+
+class ValorantApiClient:
+    def __init__(self, base_url: str = BASE_URL, timeout: float = 30.0) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self.session = requests.Session()
+
+    def fetch_version(self) -> str:
+        """Fetch latest Riot client version from valorant-api.com."""
+        url = f"{self.base_url}/version"
+        resp = self.session.get(url, timeout=self.timeout)
+        resp.raise_for_status()
+        data = resp.json()
+        version: str = data.get("data", {}).get("riotClientVersion", "")
+        return version
+
+    def fetch_skins(self) -> list[dict[str, Any]]:
+        """Fetch all weapon skins."""
+        url = f"{self.base_url}/weapons/skins"
+        resp = self.session.get(url, timeout=self.timeout)
+        resp.raise_for_status()
+        return resp.json().get("data", [])
+
+    def fetch_content_tiers(self) -> list[dict[str, Any]]:
+        """Fetch all content tiers."""
+        url = f"{self.base_url}/contenttiers"
+        resp = self.session.get(url, timeout=self.timeout)
+        resp.raise_for_status()
+        return resp.json().get("data", [])
+
+    def fetch_bundles(self) -> list[dict[str, Any]]:
+        """Fetch all featured bundles."""
+        url = f"{self.base_url}/bundles"
+        resp = self.session.get(url, timeout=self.timeout)
+        resp.raise_for_status()
+        return resp.json().get("data", [])
+
+    def load_seed_assets(self, cache: DatabaseCache) -> str:
+        """Load bundled seed assets into local cache when network is unavailable."""
+        import json
+        from pathlib import Path
+
+        seed_file = Path(__file__).resolve().parent.parent / "assets" / "seed_assets.json"
+        if not seed_file.exists():
+            raise FileNotFoundError(f"Seed assets file not found: {seed_file}")
+
+        logger.info("Loading bundled seed assets from %s...", seed_file)
+        with open(seed_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        version = data.get("client_version", "release-09.05")
+        cache.save_assets(
+            skins_data=data.get("skins", []),
+            tiers_data=data.get("content_tiers", []),
+            bundles_data=data.get("bundles", []),
+            client_version=version,
+        )
+        return version
+
+    def sync_assets(self, cache: DatabaseCache, force: bool = False) -> str:
+        """Fetch and populate local SQLite cache with latest assets and version.
+
+        Returns the dynamic client version string.
+        Falls back to local cache or bundled seed assets if network fails.
+        """
+        if not force and cache.has_assets():
+            cached_version = cache.get_client_version()
+            if cached_version:
+                logger.info("Using cached assets and client version: %s", cached_version)
+                return cached_version
+
+        logger.info("Syncing assets from %s...", self.base_url)
+        try:
+            version = self.fetch_version()
+            skins = self.fetch_skins()
+            tiers = self.fetch_content_tiers()
+            bundles = self.fetch_bundles()
+
+            cache.save_assets(
+                skins_data=skins,
+                tiers_data=tiers,
+                bundles_data=bundles,
+                client_version=version,
+            )
+            return version
+        except Exception as exc:
+            logger.warning("Failed to sync fresh live assets (%s).", exc)
+            if cache.has_assets():
+                cached_version = cache.get_client_version()
+                logger.info("Falling back to existing cached assets (version: %s)", cached_version)
+                return cached_version
+
+            logger.info("Falling back to bundled seed assets...")
+            return self.load_seed_assets(cache)
+

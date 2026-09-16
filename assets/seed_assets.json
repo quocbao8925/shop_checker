@@ -1,0 +1,112 @@
+{
+  "client_version": "release-09.05-shipping-14-2735165",
+  "content_tiers": [
+    {
+      "uuid": "12683d76-48d7-84a3-4e09-68857a97c043",
+      "devName": "Select",
+      "displayName": "Select Edition",
+      "highlightColor": "5a9fe2ff",
+      "displayIcon": "https://media.valorant-api.com/contenttiers/12683d76-48d7-84a3-4e09-68857a97c043/displayicon.png"
+    },
+    {
+      "uuid": "0e38b80e-4778-b163-2287-22a843685e8a",
+      "devName": "Deluxe",
+      "displayName": "Deluxe Edition",
+      "highlightColor": "009984ff",
+      "displayIcon": "https://media.valorant-api.com/contenttiers/0e38b80e-4778-b163-2287-22a843685e8a/displayicon.png"
+    },
+    {
+      "uuid": "60bca009-4182-7998-dee7-b8a2558dc369",
+      "devName": "Premium",
+      "displayName": "Premium Edition",
+      "highlightColor": "d1548dff",
+      "displayIcon": "https://media.valorant-api.com/contenttiers/60bca009-4182-7998-dee7-b8a2558dc369/displayicon.png"
+    },
+    {
+      "uuid": "e046854e-406c-37f4-6607-19a9ba8426fc",
+      "devName": "Exclusive",
+      "displayName": "Exclusive Edition",
+      "highlightColor": "f0b232ff",
+      "displayIcon": "https://media.valorant-api.com/contenttiers/e046854e-406c-37f4-6607-19a9ba8426fc/displayicon.png"
+    },
+    {
+      "uuid": "411e4a55-4e59-775b-37d0-7b960c918c5e",
+      "devName": "Ultra",
+      "displayName": "Ultra Edition",
+      "highlightColor": "efcf52ff",
+      "displayIcon": "https://media.valorant-api.com/contenttiers/411e4a55-4e59-775b-37d0-7b960c918c5e/displayicon.png"
+    }
+  ],
+  "skins": [
+    {
+      "uuid": "9f8a44b8-4e13-bfda-e85d-8fa0627e7f82",
+      "displayName": "Prime Vandal",
+      "displayIcon": "https://media.valorant-api.com/weaponskinlevels/3e0bf03b-4833-2895-e236-47a829e0000a/displayicon.png",
+      "contentTierUuid": "60bca009-4182-7998-dee7-b8a2558dc369",
+      "levels": [
+        {"uuid": "3e0bf03b-4833-2895-e236-47a829e0000a"},
+        {"uuid": "5f3a0df4-4682-6232-a5d4-47bd78bb9325"},
+        {"uuid": "b59a67e9-4e58-3f5c-897c-eb8957ba4bcf"},
+        {"uuid": "4392be3b-4c07-c1ff-b839-84b2e8d7bb6d"}
+      ]
+    },
+    {
+      "uuid": "608d0e76-4d04-5858-a623-64b19db212ba",
+      "displayName": "Reaver Vandal",
+      "displayIcon": "https://media.valorant-api.com/weaponskinlevels/7ed9f579-45cb-fb5a-e455-879e6fae85df/displayicon.png",
+      "contentTierUuid": "60bca009-4182-7998-dee7-b8a2558dc369",
+      "levels": [
+        {"uuid": "7ed9f579-45cb-fb5a-e455-879e6fae85df"},
+        {"uuid": "f89da1f4-4113-1be6-9730-10901e916a2b"},
+        {"uuid": "6f2998ec-460d-773e-32ce-0a9ea9bb09ab"},
+        {"uuid": "14845012-42da-912f-90e8-07b94960eb56"}
+      ]
+    },
+    {
+      "uuid": "cb2d9f48-4e89-138b-d784-5eb90e66b44a",
+      "displayName": "Kuronami Vandal",
+      "displayIcon": "https://media.valorant-api.com/weaponskinlevels/29d2b7d4-4158-9a99-8cf0-2184b2db0a61/displayicon.png",
+      "contentTierUuid": "e046854e-406c-37f4-6607-19a9ba8426fc",
+      "levels": [
+        {"uuid": "29d2b7d4-4158-9a99-8cf0-2184b2db0a61"},
+        {"uuid": "b9680c42-4f32-75eb-59a4-239632eb9c9f"}
+      ]
+    },
+    {
+      "uuid": "99ea78f7-41a6-91e8-6622-6b93475d6911",
+      "displayName": "Glitchpop Phantom",
+      "displayIcon": "https://media.valorant-api.com/weaponskinlevels/a93322aa-4f27-6f8c-c4c0-76bc0639d6b5/displayicon.png",
+      "contentTierUuid": "e046854e-406c-37f4-6607-19a9ba8426fc",
+      "levels": [
+        {"uuid": "a93322aa-4f27-6f8c-c4c0-76bc0639d6b5"},
+        {"uuid": "8b5258e6-42d8-bf8f-d6c5-ea819614c514"}
+      ]
+    },
+    {
+      "uuid": "25816da6-46b7-dc26-9f05-aa81f2115fec",
+      "displayName": "Sovereign Ghost",
+      "displayIcon": "https://media.valorant-api.com/weaponskinlevels/c36ff63d-4c37-83d3-7393-279c138f36a8/displayicon.png",
+      "contentTierUuid": "60bca009-4182-7998-dee7-b8a2558dc369",
+      "levels": [
+        {"uuid": "c36ff63d-4c37-83d3-7393-279c138f36a8"}
+      ]
+    },
+    {
+      "uuid": "5c4a4524-4f05-59b4-9366-a384eb1ef942",
+      "displayName": "Ion Operator",
+      "displayIcon": "https://media.valorant-api.com/weaponskinlevels/f91572c6-4d57-e95e-1ec8-cbab2a275466/displayicon.png",
+      "contentTierUuid": "60bca009-4182-7998-dee7-b8a2558dc369",
+      "levels": [
+        {"uuid": "f91572c6-4d57-e95e-1ec8-cbab2a275466"}
+      ]
+    }
+  ],
+  "bundles": [
+    {
+      "uuid": "3b60383b-483c-62bb-f5d6-d08ec42b0db2",
+      "displayName": "Kuronami Collection",
+      "displayIcon": "https://media.valorant-api.com/bundles/3b60383b-483c-62bb-f5d6-d08ec42b0db2/displayicon.png",
+      "description": "Featured Kuronami collection bundle"
+    }
+  ]
+}

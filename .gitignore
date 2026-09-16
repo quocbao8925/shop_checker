@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.sqlite3*
+session.json
+.gradle/
+**/build/
+local.properties
+*.jks
+*.keystore
