@@ -2,7 +2,7 @@
 import hashlib
 import json
 from pathlib import Path
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from auth.riot_auth import RiotAuthService, AuthenticationError, AUTH_URL
 from api.store_client import StoreClient, StoreApiError
 from api.valorant_api import ValorantApiClient
@@ -10,7 +10,13 @@ from cache.db import DatabaseCache
 from models import AuthTokens
 
 def login_url(state):
-    return AUTH_URL.replace("nonce=1", "nonce=" + state) + "&" + urlencode({"state": state})
+    # Let Riot reuse remembered WebView cookies. Never force a fresh password/MFA.
+    parsed = urlparse(AUTH_URL)
+    params = parse_qs(parsed.query)
+    params.pop("prompt", None)
+    params["nonce"] = [state]
+    params["state"] = [state]
+    return urlunparse(parsed._replace(query=urlencode(params, doseq=True)))
 
 def authenticate(url, state):
     parsed = urlparse(url)

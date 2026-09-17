@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from unittest.mock import patch, Mock
+from urllib.parse import parse_qs, urlparse
 
 import android_bridge as bridge
 from auth.riot_auth import AuthenticationError, RiotAuthService
@@ -10,6 +11,17 @@ from api.store_client import StoreApiError
 
 
 class AndroidBridgeTests(unittest.TestCase):
+    def test_login_url_allows_remembered_session_and_encodes_state(self):
+        state = "random-state&prompt=login"
+        url = urlparse(bridge.login_url(state))
+        query = parse_qs(url.query)
+        self.assertEqual(url.scheme, "https")
+        self.assertEqual(url.hostname, "auth.riotgames.com")
+        self.assertNotIn("prompt", query)
+        self.assertEqual(query["state"], [state])
+        self.assertEqual(query["nonce"], [state])
+        self.assertEqual(query["redirect_uri"], ["http://localhost/redirect"])
+
     def tokens(self, account="account-a"):
         return AuthTokens("access", "id", "entitlements", account, "ap", "ap")
 

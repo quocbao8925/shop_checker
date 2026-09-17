@@ -177,7 +177,8 @@ class MainActivity : Activity() {
     private fun task(message: String, work: () -> String, done: (String) -> Unit) {
         if (busy) return
         busy = true
-        page(message)
+        page("SHOP CHECKER", brandOnly = true)
+        label(message, 14f, muted)
         body.addView(ProgressBar(this).apply {
             indeterminateTintList = ColorStateList.valueOf(accent)
             layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply { gravity = Gravity.CENTER; topMargin = dp(20) }
@@ -212,15 +213,21 @@ class MainActivity : Activity() {
         label("Unofficial companion. Not endorsed by Riot Games.", 11f, muted)
     }
     private fun refresh() {
-        task("LOADING YOUR SHOP", {
+        task("Loading your shop...", {
             val session = vault.load()
             if (session == null) "{\"status\":\"login_required\"}"
             else call("shop", filesDir.absolutePath, session)
         }) { renderShop(JSONObject(it)) }
     }
-    private fun renderShop(result: JSONObject) {
+    private fun renderShop(result: JSONObject, allowRenewal: Boolean = true) {
         val status = result.getString("status")
-        if (status == "login_required") { vault.clear(); welcome(); return }
+        if (status == "login_required") {
+            // Expiry is not logout: retain the session marker and Riot's cookies.
+            // One renewal per refresh prevents loops if newly issued tokens are rejected.
+            if (allowRenewal && vault.load() != null) beginLogin(renewing = true)
+            else welcome(if (vault.load() != null) "Please sign in to continue." else "")
+            return
+        }
         if (status == "unavailable") { welcome("Your shop is unavailable. Please try again later."); return }
         val snapshot = result.getJSONObject("snapshot")
         page("YOUR SHOP", center = false)
@@ -276,10 +283,11 @@ class MainActivity : Activity() {
         button("Refresh shop", primary = true) { refresh() }
         button("Sign out") { logout() }
     }
-    private fun beginLogin() {
+    private fun beginLogin(renewing: Boolean = false) {
+        if (busy || browser != null) return
         val state = UUID.randomUUID().toString()
         loginState = state
-        task("OPENING RIOT", { call("login_url", state) }) { url ->
+        task(if (renewing) "Restoring your Riot session..." else "Opening Riot sign-in...", { call("login_url", state) }) { url ->
             page("RIOT SIGN IN", center = false)
             window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
             button("Cancel sign-in") { closeBrowser(); welcome() }
@@ -290,17 +298,26 @@ class MainActivity : Activity() {
             web.settings.allowFileAccess = false
             web.settings.allowContentAccess = false
             web.settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(web, false)
             web.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                    if (view !== browser) return true
                     val value = request.url.toString()
                     if (request.isForMainFrame && capture(value)) return true
                     return request.url.scheme != "https"
                 }
-                override fun doUpdateVisitedHistory(view: WebView, url: String, reload: Boolean) { capture(url) }
-                override fun onPageFinished(view: WebView, url: String) { capture(url) }
+                override fun doUpdateVisitedHistory(view: WebView, url: String, reload: Boolean) {
+                    if (view === browser) capture(url)
+                }
+                override fun onPageFinished(view: WebView, url: String) {
+                    if (view === browser) {
+                        persistCookies()
+                        capture(url)
+                    }
+                }
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                    if (request.isForMainFrame && !capture(request.url.toString()) && browser != null) {
+                    if (view === browser && request.isForMainFrame && !capture(request.url.toString()) && browser != null) {
                         closeBrowser(); welcome("Unable to open Riot. Check your connection and try again.")
                     }
                 }
@@ -315,11 +332,12 @@ class MainActivity : Activity() {
         val state = loginState ?: return true
         loginState = null
         closeBrowser()
-        task("CONNECTING YOUR ACCOUNT", {
+        task("Connecting to your Riot account...", {
+            CookieManager.getInstance().flush()
             val session = call("authenticate", url, state)
             vault.save(session)
             call("shop", filesDir.absolutePath, session)
-        }) { renderShop(JSONObject(it)) }
+        }) { renderShop(JSONObject(it), allowRenewal = false) }
         return true
     }
     private fun closeBrowser() {
@@ -336,14 +354,28 @@ class MainActivity : Activity() {
         if (busy) return
         closeBrowser()
         vault.clear()
-        CookieManager.getInstance().removeAllCookies { CookieManager.getInstance().flush() }
-        WebStorage.getInstance().deleteAllData()
-        welcome()
+        busy = true
+        page("SHOP CHECKER", brandOnly = true)
+        label("Signing out...", 14f, muted)
+        // Do not allow a new sign-in while old cookies are still being removed.
+        CookieManager.getInstance().removeAllCookies {
+            CookieManager.getInstance().flush()
+            WebStorage.getInstance().deleteAllData()
+            busy = false
+            if (!isDestroyed) welcome()
+        }
     }
     @Deprecated("Legacy Activity navigation")
     override fun onBackPressed() {
         if (browser != null) { closeBrowser(); welcome() }
         else if (!busy) super.onBackPressed()
+    }
+    private fun persistCookies() {
+        if (!worker.isShutdown) worker.execute { CookieManager.getInstance().flush() }
+    }
+    override fun onPause() {
+        persistCookies()
+        super.onPause()
     }
     override fun onDestroy() {
         closeBrowser()

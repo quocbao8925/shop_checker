@@ -44,6 +44,27 @@ APK, which deletes its local data. Use a stable private signing key before regul
 
 ## First phone test
 
+### Remembered sessions (0.3.1)
+
+Android authorization no longer sends `prompt=login`. The app flushes WebView
+cookies after navigation, on pause and before exchanging the callback. When a
+stored access token expires or the store returns 401, the app opens authorization
+once to reuse Riot's remembered browser session. A rejected renewal returns to
+sign-in without looping. Only explicit Sign out clears the session and cookies.
+Riot can still require password/MFA when its remembered session is invalid or
+additional verification is required; the app does not extend token/cookie expiry.
+
+Test by enabling Remember me / trusted device during Riot sign-in, closing and
+reopening the app, then using Refresh shop after the access token expires.
+Expected: authorize redirects back automatically if Riot accepts the cookie;
+otherwise the real Riot login/MFA page appears. Also verify Sign out actually
+forgets the session. Do not uninstall or clear app storage between these checks,
+as doing so removes cookies. This duration-based behavior requires phone testing.
+
+Loading screens now show SHOP CHECKER at 38sp and the progress message at 14sp.
+Protocol references: [OIDC prompt](https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest)
+and [Android CookieManager.flush](https://developer.android.com/reference/android/webkit/CookieManager#flush()).
+
 1. Tap Dang nhap Riot, finish login/MFA on the Riot page.
 2. The localhost redirect should close the web screen automatically.
 3. The shop loads. Check that the four offers and wallet match the game.
