@@ -116,8 +116,9 @@ class ValorantApiClient:
 
 
 
-    def sync_accessories(self, cache: DatabaseCache) -> None:
+    def sync_accessories(self, cache: DatabaseCache, max_seconds: float | None = None) -> None:
         """Refresh independent catalogs daily, retaining cached data on failure."""
+        started = time.monotonic()
         for endpoint, kind in (
             ("buddies", "Gun buddy"), ("sprays", "Spray"),
             ("playercards", "Player card"), ("playertitles", "Player title"),
@@ -126,10 +127,13 @@ class ValorantApiClient:
             stamp = "catalog_synced_" + endpoint
             if time.time() - float(cache.get_metadata(stamp, "0")) < 86400:
                 continue
+            remaining = (max_seconds - (time.monotonic() - started)) if max_seconds is not None else 8
+            if remaining <= 0:
+                break
             try:
                 response = self.session.get(
                     f"{self.base_url}/{endpoint}", params={"language": "en-US"},
-                    timeout=min(self.timeout, 8),
+                    timeout=min(self.timeout, 8, max(0.1, remaining)),
                 )
                 response.raise_for_status()
                 rows = []

@@ -9,6 +9,8 @@ import android.content.res.ColorStateList
 import android.view.Gravity
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.WindowManager
 import android.webkit.*
 import android.widget.*
@@ -19,6 +21,7 @@ import org.json.JSONArray
 import java.util.UUID
 import java.util.Date
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : Activity() {
     private val images = SkinImages()
@@ -28,6 +31,11 @@ class MainActivity : Activity() {
     private val muted = Color.rgb(170, 174, 183)
     private var centered = true
     private val worker = Executors.newSingleThreadExecutor()
+    private val cookieWorker = Executors.newSingleThreadExecutor()
+    private val cookiePending = AtomicBoolean(false)
+    private val requestRunning = AtomicBoolean(false)
+    private val handler = Handler(Looper.getMainLooper())
+    private var taskId = 0L
     private lateinit var vault: SessionVault
     private lateinit var body: LinearLayout
     private var browser: WebView? = null
@@ -174,8 +182,13 @@ class MainActivity : Activity() {
         if (!Python.isStarted()) Python.start(AndroidPlatform(applicationContext))
         return Python.getInstance().getModule("android_bridge").callAttr(name, *args).toString()
     }
-    private fun task(message: String, work: () -> String, done: (String) -> Unit) {
+    private fun task(message: String, work: () -> String, timeoutMs: Long = 90000L, done: (String) -> Unit) {
         if (busy) return
+        if (!requestRunning.compareAndSet(false, true)) {
+            welcome("The previous request is still finishing. Please retry shortly, or reopen the app. [REQUEST_BUSY]")
+            return
+        }
+        val id = ++taskId
         busy = true
         page("SHOP CHECKER", brandOnly = true)
         label(message, 14f, muted)
@@ -183,15 +196,35 @@ class MainActivity : Activity() {
             indeterminateTintList = ColorStateList.valueOf(accent)
             layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply { gravity = Gravity.CENTER; topMargin = dp(20) }
         })
+        val timeout = Runnable {
+            if (!isDestroyed && id == taskId) {
+                ++taskId
+                busy = false
+                welcome("Request timed out: $message Please try again. [REQUEST_TIMEOUT]")
+            }
+        }
+        handler.postDelayed(timeout, timeoutMs)
+        button("Cancel") {
+            ++taskId
+            handler.removeCallbacks(timeout)
+            busy = false
+            welcome()
+        }
         worker.execute {
-            try {
-                val result = work()
-                runOnUiThread { busy = false; if (!isDestroyed) done(result) }
-            } catch (_: Exception) {
-                // Never expose a Python exception: it can contain account data or tokens.
-                runOnUiThread {
+            // Cancellation invalidates the UI result; it cannot forcibly stop Python I/O.
+            val result = try { work() } catch (_: Exception) { null }
+            requestRunning.set(false)
+            handler.post {
+                handler.removeCallbacks(timeout)
+                if (!isDestroyed && id == taskId) {
                     busy = false
-                    if (!isDestroyed) welcome("Unable to connect. Check your connection and try signing in again.")
+                    try {
+                        if (result == null) welcome("Unable to complete: $message Please retry. [REQUEST_FAILED]")
+                        else done(result)
+                    } catch (_: Exception) {
+                        // Never expose raw Python errors, callback URLs or tokens.
+                        welcome("Unable to read the server response. Please retry. [RESPONSE_FAILED]")
+                    }
                 }
             }
         }
@@ -212,13 +245,16 @@ class MainActivity : Activity() {
         }
         label("Unofficial companion. Not endorsed by Riot Games.", 11f, muted)
     }
-    private fun refresh() {
+    private fun refresh(allowRenewal: Boolean = true) {
         task("Loading your shop...", {
             val session = vault.load()
             if (session == null) "{\"status\":\"login_required\"}"
             else call("shop", filesDir.absolutePath, session)
-        }) { renderShop(JSONObject(it)) }
+        }) { renderShop(JSONObject(it), allowRenewal) }
     }
+    private fun errorCode(result: JSONObject): String = result.optString("code")
+        .takeIf { it.matches(Regex("(AUTH|STORE|SHOP)_(HTTP_[0-9]{3}|NETWORK|FAILED)")) }
+        ?: "REQUEST_FAILED"
     private fun renderShop(result: JSONObject, allowRenewal: Boolean = true) {
         val status = result.getString("status")
         if (status == "login_required") {
@@ -228,11 +264,15 @@ class MainActivity : Activity() {
             else welcome(if (vault.load() != null) "Please sign in to continue." else "")
             return
         }
-        if (status == "unavailable") { welcome("Your shop is unavailable. Please try again later."); return }
+        if (status == "unavailable") {
+            welcome("Your shop is unavailable. Please try again later. [${errorCode(result)}]")
+            return
+        }
         val snapshot = result.getJSONObject("snapshot")
         page("YOUR SHOP", center = false)
         val fetched = snapshot.getDouble("fetched_at")
         label(if (status == "cached") "CACHED STORE | ${Date((fetched * 1000).toLong())}" else "LIVE STORE")
+        if (status == "cached") label("Live update failed. [${errorCode(result)}]", 13f, muted)
         val wallet = snapshot.getJSONObject("wallet")
         label("${wallet.getInt("valorant_points")} VP   |   ${wallet.getInt("radianite_points")} RP   |   ${wallet.optInt("kingdom_credits")} KC")
         label("DAILY SHOP", 22f)
@@ -331,13 +371,18 @@ class MainActivity : Activity() {
         if (uri.scheme != "http" || uri.host != "localhost" || uri.port != -1 || uri.path != "/redirect") return false
         val state = loginState ?: return true
         loginState = null
+        persistCookies()
         closeBrowser()
         task("Connecting to your Riot account...", {
-            CookieManager.getInstance().flush()
-            val session = call("authenticate", url, state)
-            vault.save(session)
-            call("shop", filesDir.absolutePath, session)
-        }) { renderShop(JSONObject(it), allowRenewal = false) }
+            call("authenticate_result", url, state)
+        }, timeoutMs = 50000L) {
+            val result = JSONObject(it)
+            if (result.optString("status") == "authenticated") {
+                // Only a current, non-cancelled login may change the saved account.
+                vault.save(result.getJSONObject("session").toString())
+                refresh(allowRenewal = false)
+            } else welcome("Unable to connect to your Riot account. Please retry. [${errorCode(result)}]")
+        }
         return true
     }
     private fun closeBrowser() {
@@ -371,16 +416,25 @@ class MainActivity : Activity() {
         else if (!busy) super.onBackPressed()
     }
     private fun persistCookies() {
-        if (!worker.isShutdown) worker.execute { CookieManager.getInstance().flush() }
+        if (!cookieWorker.isShutdown && cookiePending.compareAndSet(false, true)) {
+            cookieWorker.execute {
+                try { CookieManager.getInstance().flush() }
+                catch (_: Exception) { /* Retain cookies in memory; never force logout. */ }
+                finally { cookiePending.set(false) }
+            }
+        }
     }
     override fun onPause() {
         persistCookies()
         super.onPause()
     }
     override fun onDestroy() {
+        ++taskId
+        handler.removeCallbacksAndMessages(null)
         closeBrowser()
         images.close()
         worker.shutdown()
+        cookieWorker.shutdown()
         super.onDestroy()
     }
 }

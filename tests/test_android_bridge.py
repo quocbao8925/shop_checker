@@ -11,6 +11,35 @@ from api.store_client import StoreApiError
 
 
 class AndroidBridgeTests(unittest.TestCase):
+    def test_auth_result_success(self):
+        session = self.tokens().to_dict()
+        with patch.object(bridge, "authenticate", return_value=json.dumps(session)):
+            result = json.loads(bridge.authenticate_result("callback", "state"))
+        self.assertEqual(result, {"status": "authenticated", "session": session})
+
+    def test_auth_errors_never_expose_response_or_credentials(self):
+        for exc, code in [
+            (AuthenticationError("HTTP 401 secret-token"), "AUTH_HTTP_401"),
+            (bridge.NetworkError("secret-url"), "AUTH_NETWORK"),
+            (bridge.RateLimitError("secret-body"), "AUTH_HTTP_429"),
+            (ValueError("secret-data"), "AUTH_FAILED"),
+        ]:
+            with self.subTest(code=code), patch.object(bridge, "authenticate", side_effect=exc):
+                result = json.loads(bridge.authenticate_result("callback", "state"))
+                self.assertEqual(result, {"status": "error", "code": code})
+
+    def test_optional_catalogs_stop_when_budget_expires(self):
+        cache = Mock()
+        cache.get_metadata.return_value = "0"
+        client = bridge.ValorantApiClient(timeout=8)
+        with patch("api.valorant_api.time.monotonic", side_effect=[0, 0, 13]), \
+                patch.object(client.session, "get", side_effect=bridge.requests.Timeout) as get:
+            client.sync_accessories(cache, max_seconds=12)
+        self.assertEqual(get.call_count, 1)
+        self.assertEqual(get.call_args.kwargs["timeout"], 8)
+        cache.save_catalog_items.assert_not_called()
+        client.session.close()
+
     def test_login_url_allows_remembered_session_and_encodes_state(self):
         state = "random-state&prompt=login"
         url = urlparse(bridge.login_url(state))
